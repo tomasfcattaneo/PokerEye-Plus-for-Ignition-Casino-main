@@ -1983,12 +1983,53 @@ const PositionStrategy = {
 // 3. Use Poker Odds for preflop equity and quick odds
 // 4. Use GTO tables/evaluator for recommended actions
 // Always update HUD with results from all engines
-// Example integration (pseudo-code):
-// const equity = runMonteCarlo(...);
-// const handStrength = PokerSolverManager.isAvailable() ? PokerSolver.Hand.solve(...) : fallbackEval(...);
-// const odds = OddsCalculator.getQuickPreflopEquity(...);
-// const gtoActions = getUnifiedRecommendationFromEvaluator(...);
-// HUD.update({ equity, handStrength, odds, gtoActions });
+
+// === FULL ENGINE INTEGRATION FOR HUD ===
+async function updateFullEngineHUD({ heroHand, board, numOpponents, deadCards, iterations, villains, context, players, potSize, toCall, raiseSize, street, isPreflop }) {
+  // 1. Monte Carlo equity (postflop)
+  let monteCarloResult = null;
+  if (board && board.length >= 3) {
+    monteCarloResult = await EquityCalculator._runOptimizedMonteCarloSimulation(heroHand, board, numOpponents, deadCards, iterations, villains, context);
+  }
+
+  // 2. PokerSolver hand strength
+  let handStrength = null;
+  if (PokerSolverManager.isAvailable()) {
+    const solverCards = (window.PokerEyeCards && typeof window.PokerEyeCards.toSolverHand === 'function')
+      ? window.PokerEyeCards.toSolverHand([...heroHand, ...(board||[])])
+      : [...heroHand, ...(board||[])].map(c => {
+        let value = c.slice(0, -1);
+        let suit = c.slice(-1);
+        const suitMap = { '♥': 'h', '♦': 'd', '♣': 'c', '♠': 's' };
+        suit = suitMap[suit] || suit.toLowerCase();
+        if (value === '10') value = 'T';
+        return `${value}${suit}`;
+      });
+    handStrength = window.PokerSolver.Hand.solve(solverCards);
+  }
+
+  // 3. Poker Odds (preflop)
+  let preflopOdds = null;
+  if (isPreflop) {
+    preflopOdds = EquityCalculator.getQuickPreflopEquity(heroHand, context.position, context.stackSize, context.rfiPosition, context.is3BetPot, players, villains);
+  }
+
+  // 4. GTO recommended actions
+  let gtoActions = null;
+  try {
+    gtoActions = await getUnifiedRecommendationFromEvaluator({ heroHand, board, players, potSize, toCall, raiseSize, context, street, isPreflop });
+  } catch {}
+
+  // Update HUD with all results
+  HUD.update({
+    equity: monteCarloResult ? monteCarloResult.equity : null,
+    handStrength,
+    preflopOdds,
+    gtoActions,
+    monteCarlo: monteCarloResult,
+    // Optionally add more details as needed
+  });
+}
 
 class HUD {
   constructor(pokerTable) {
