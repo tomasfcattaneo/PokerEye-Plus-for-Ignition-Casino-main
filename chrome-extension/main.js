@@ -1986,48 +1986,78 @@ const PositionStrategy = {
 
 // === FULL ENGINE INTEGRATION FOR HUD ===
 async function updateFullEngineHUD({ heroHand, board, numOpponents, deadCards, iterations, villains, context, players, potSize, toCall, raiseSize, street, isPreflop }) {
-  // 1. Monte Carlo equity (postflop)
+  // --- 1. Monte Carlo equity (postflop) ---
   let monteCarloResult = null;
-  if (board && board.length >= 3) {
-    monteCarloResult = await EquityCalculator._runOptimizedMonteCarloSimulation(heroHand, board, numOpponents, deadCards, iterations, villains, context);
+  let equity = null;
+  if (board && board.length >= 3 && heroHand && heroHand.length === 2 && numOpponents >= 1) {
+    try {
+      monteCarloResult = await EquityCalculator._runOptimizedMonteCarloSimulation(heroHand, board, numOpponents, deadCards, iterations, villains, context);
+      if (monteCarloResult && typeof monteCarloResult.equity === 'number') equity = monteCarloResult.equity;
+    } catch (e) {
+      console.warn('[HUD] MonteCarlo error:', e);
+    }
   }
 
-  // 2. PokerSolver hand strength
+  // --- 2. PokerSolver hand strength ---
   let handStrength = null;
-  if (PokerSolverManager.isAvailable()) {
-    const solverCards = (window.PokerEyeCards && typeof window.PokerEyeCards.toSolverHand === 'function')
-      ? window.PokerEyeCards.toSolverHand([...heroHand, ...(board||[])])
-      : [...heroHand, ...(board||[])].map(c => {
-        let value = c.slice(0, -1);
-        let suit = c.slice(-1);
-        const suitMap = { '♥': 'h', '♦': 'd', '♣': 'c', '♠': 's' };
-        suit = suitMap[suit] || suit.toLowerCase();
-        if (value === '10') value = 'T';
-        return `${value}${suit}`;
-      });
-    handStrength = window.PokerSolver.Hand.solve(solverCards);
+  if (PokerSolverManager.isAvailable() && heroHand && board) {
+    try {
+      const solverCards = (window.PokerEyeCards && typeof window.PokerEyeCards.toSolverHand === 'function')
+        ? window.PokerEyeCards.toSolverHand([...heroHand, ...(board||[])])
+        : [...heroHand, ...(board||[])].map(c => {
+          let value = c.slice(0, -1);
+          let suit = c.slice(-1);
+          const suitMap = { '♥': 'h', '♦': 'd', '♣': 'c', '♠': 's' };
+          suit = suitMap[suit] || suit.toLowerCase();
+          if (value === '10') value = 'T';
+          return `${value}${suit}`;
+        });
+      handStrength = window.PokerSolver.Hand.solve(solverCards);
+    } catch (e) {
+      console.warn('[HUD] PokerSolver error:', e);
+    }
   }
 
-  // 3. Poker Odds (preflop)
+  // --- 3. Poker Odds (preflop) ---
   let preflopOdds = null;
-  if (isPreflop) {
-    preflopOdds = EquityCalculator.getQuickPreflopEquity(heroHand, context.position, context.stackSize, context.rfiPosition, context.is3BetPot, players, villains);
+  if (isPreflop && heroHand && heroHand.length === 2) {
+    try {
+      preflopOdds = EquityCalculator.getQuickPreflopEquity(heroHand, context.position, context.stackSize, context.rfiPosition, context.is3BetPot, players, villains);
+    } catch (e) {
+      console.warn('[HUD] Preflop Odds error:', e);
+    }
   }
 
-  // 4. GTO recommended actions
+  // --- 4. GTO recommended actions ---
   let gtoActions = null;
   try {
     gtoActions = await getUnifiedRecommendationFromEvaluator({ heroHand, board, players, potSize, toCall, raiseSize, context, street, isPreflop });
-  } catch {}
+    // Validar que las acciones tengan probabilidad > 0 y EV definido
+    if (gtoActions && Array.isArray(gtoActions.actions)) {
+      gtoActions.actions = gtoActions.actions.filter(a => typeof a.prob === 'number' && a.prob > 0 && typeof a.ev === 'number');
+    }
+  } catch (e) {
+    console.warn('[HUD] GTO Evaluator error:', e);
+  }
 
-  // Update HUD with all results
+  // --- Validación final y actualización del HUD ---
+  // Si no hay equity válida, no mostrar 50% por defecto, dejar en null
+  if (typeof equity !== 'number' || equity < 0 || equity > 100) equity = null;
+  // Si no hay handStrength válida, dejar en null
+  if (!handStrength || typeof handStrength.rank !== 'number') handStrength = null;
+  // Si no hay preflopOdds válida, dejar en null
+  if (!preflopOdds || typeof preflopOdds.equity !== 'number') preflopOdds = null;
+  // Si no hay acciones recomendadas válidas, dejar en null
+  if (!gtoActions || !Array.isArray(gtoActions.actions) || gtoActions.actions.length === 0) gtoActions = null;
+
+  // --- Actualizar HUD con todos los resultados válidos ---
   HUD.update({
-    equity: monteCarloResult ? monteCarloResult.equity : null,
+    equity,
     handStrength,
     preflopOdds,
     gtoActions,
     monteCarlo: monteCarloResult,
-    // Optionally add more details as needed
+    // Puedes agregar más detalles si lo necesitas
   });
 }
 
