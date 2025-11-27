@@ -42,3 +42,4 @@ yarn-error.log*
 # chrome-extension
 # ----------------
 chrome-extension/references*
+chrome-extension/TEST/

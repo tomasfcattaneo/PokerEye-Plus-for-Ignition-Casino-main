@@ -1,0 +1,178 @@
+[
+  {
+    "name": "HU: AKs vs Tight",
+    "equity": 0,
+    "actions": [
+      {
+        "action": "fold",
+        "prob": 0.04464262944135788,
+        "ev": 0
+      },
+      {
+        "action": "call",
+        "prob": 0.6666666666666667,
+        "ev": 0.5
+      },
+      {
+        "action": "raise",
+        "prob": 0.2886907038919754,
+        "ev": 1.4
+      }
+    ],
+    "error": null
+  },
+  {
+    "name": "HU: 22 vs Loose",
+    "equity": 0,
+    "actions": [
+      {
+        "action": "fold",
+        "prob": 0.04464262944135788,
+        "ev": 0
+      },
+      {
+        "action": "call",
+        "prob": 0.6666666666666667,
+        "ev": 0.5
+      },
+      {
+        "action": "raise",
+        "prob": 0.2886907038919754,
+        "ev": 1.4
+      }
+    ],
+    "error": null
+  },
+  {
+    "name": "HU: JTs vs Aggressive",
+    "equity": 0,
+    "actions": [
+      {
+        "action": "fold",
+        "prob": 0.04464262944135788,
+        "ev": 0
+      },
+      {
+        "action": "call",
+        "prob": 0.6666666666666667,
+        "ev": 0.5
+      },
+      {
+        "action": "raise",
+        "prob": 0.2886907038919754,
+        "ev": 1.4
+      }
+    ],
+    "error": null
+  },
+  {
+    "name": "HU: A5s vs Passive",
+    "equity": 0,
+    "actions": [
+      {
+        "action": "fold",
+        "prob": 0.04464262944135788,
+        "ev": 0
+      },
+      {
+        "action": "call",
+        "prob": 0.6666666666666667,
+        "ev": 0.5
+      },
+      {
+        "action": "raise",
+        "prob": 0.2886907038919754,
+        "ev": 1.4
+      }
+    ],
+    "error": null
+  },
+  {
+    "name": "3way: AA vs Tight & Loose",
+    "equity": 0,
+    "actions": [
+      {
+        "action": "fold",
+        "prob": 0.042329227704570524,
+        "ev": 0
+      },
+      {
+        "action": "call",
+        "prob": 0.75,
+        "ev": 1
+      },
+      {
+        "action": "raise",
+        "prob": 0.2076707722954295,
+        "ev": 1.4314285714285717
+      }
+    ],
+    "error": null
+  },
+  {
+    "name": "3way: 76s vs Aggressive & Passive",
+    "equity": 0,
+    "actions": [
+      {
+        "action": "fold",
+        "prob": 0.042329227704570524,
+        "ev": 0
+      },
+      {
+        "action": "call",
+        "prob": 0.75,
+        "ev": 1
+      },
+      {
+        "action": "raise",
+        "prob": 0.2076707722954295,
+        "ev": 1.4314285714285717
+      }
+    ],
+    "error": null
+  },
+  {
+    "name": "4way: KQo vs Tight, Loose, Aggressive",
+    "equity": 0,
+    "actions": [
+      {
+        "action": "fold",
+        "prob": 0.04579993347404475,
+        "ev": 0
+      },
+      {
+        "action": "call",
+        "prob": 0.7999999999999999,
+        "ev": 1.5
+      },
+      {
+        "action": "raise",
+        "prob": 0.15420006652595533,
+        "ev": 1.274666666666667
+      }
+    ],
+    "error": null
+  },
+  {
+    "name": "Multiway wet flop vs Loose",
+    "equity": 0,
+    "actions": [
+      {
+        "action": "fold",
+        "prob": 0.008783420004845532,
+        "ev": 0
+      },
+      {
+        "action": "call",
+        "prob": 0.8000000000000002,
+        "ev": 3
+      },
+      {
+        "action": "raise",
+        "prob": 0.19121657999515435,
+        "ev": 3.234567901234568
+      }
+    ],
+    "error": null
+  }
+]

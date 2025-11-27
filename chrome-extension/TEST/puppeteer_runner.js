@@ -128,9 +128,26 @@ const puppeteer = require('puppeteer');
     };
   }
 
-  const scenarios = Array.from({length: 7}, (_,i) => getRandomScenario(i));
+  const scenarios = [
+  // Array para guardar los resultados de cada escenario
+    // Preflop vs tipos de jugadores
+    { name: 'HU: AKs vs Tight', hero:['Ah','Kh'], board:[], players:[{name:'Tight', isTight:true}], potSize:2, toCall:1, raiseSize:3 },
+    { name: 'HU: 22 vs Loose', hero:['2h','2d'], board:[], players:[{name:'Loose', isTight:false}], potSize:2, toCall:1, raiseSize:3 },
+    { name: 'HU: JTs vs Aggressive', hero:['Jh','Ts'], board:[], players:[{name:'Aggressive', isAggressive:true}], potSize:2, toCall:1, raiseSize:3 },
+    { name: 'HU: A5s vs Passive', hero:['Ah','5h'], board:[], players:[{name:'Passive', isAggressive:false}], potSize:2, toCall:1, raiseSize:3 },
+    // Multiway con tipos variados
+    { name: '3way: AA vs Tight & Loose', hero:['Ac','Ad'], board:[], players:[{name:'Tight', isTight:true},{name:'Loose', isTight:false}], potSize:3, toCall:1, raiseSize:4 },
+    { name: '3way: 76s vs Aggressive & Passive', hero:['7h','6h'], board:[], players:[{name:'Aggressive', isAggressive:true},{name:'Passive', isAggressive:false}], potSize:3, toCall:1, raiseSize:4 },
+    { name: '4way: KQo vs Tight, Loose, Aggressive', hero:['Ks','Qd'], board:[], players:[{name:'Tight', isTight:true},{name:'Loose', isTight:false},{name:'Aggressive', isAggressive:true}], potSize:4, toCall:1, raiseSize:5 },
+    // Postflop ejemplo
+    { name: 'Multiway wet flop vs Loose', hero:['9h','9d'], board:['Jh','Th','8s'], players:[{name:'Loose', isTight:false},{name:'Loose', isTight:false},{name:'Loose', isTight:false}], potSize:8, toCall:2, raiseSize:10 }
+  ];
+
+  // Array para guardar los resultados de cada escenario
+  const results = [];
 
   for (const s of scenarios) {
+
     console.log('Running scenario in headless browser:', s.name);
     const result = await page.evaluate(async (sc) => {
       try {
@@ -139,9 +156,18 @@ const puppeteer = require('puppeteer');
       } catch (e) { return { error: String(e) }; }
     }, s);
 
+    results.push({
+      name: s.name,
+      equity: result.equity || (result.result && result.result.equity) || 0,
+      actions: result.actions || [],
+      error: result.error || null
+    });
     console.log('Result:', result);
   }
 
+  // Guardar resultados en puppeteer_results.json
+  fs.writeFileSync(path.join(__dirname, 'puppeteer_results.json'), JSON.stringify(results, null, 2));
+
   await browser.close();
-  console.log('Puppeteer run complete.');
+  console.log('Puppeteer run complete. Resultados guardados en puppeteer_results.json');
 })();
