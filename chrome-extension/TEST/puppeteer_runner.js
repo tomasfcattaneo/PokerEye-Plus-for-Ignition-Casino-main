@@ -93,10 +93,42 @@ const puppeteer = require('puppeteer');
   await page.evaluate(code);
 
   // Define scenarios similar to scenario_runner
-  const scenarios = [
-    { name: 'HU: AKs', hero:['Ah','Kh'], board:[], players:[{name:'V1'}], potSize:2, toCall:1, raiseSize:3 },
-    { name: 'Multiway wet flop', hero:['9h','9d'], board:['Jh','Th','8s'], players:[{},{},{},{}], potSize:8, toCall:2, raiseSize:10 }
-  ];
+  // Generate random preflop scenarios
+  function getRandomCard(exclude=[]) {
+    const ranks = ['2','3','4','5','6','7','8','9','T','J','Q','K','A'];
+    const suits = ['h','d','c','s'];
+    let card;
+    do {
+      card = ranks[Math.floor(Math.random()*ranks.length)] + suits[Math.floor(Math.random()*suits.length)];
+    } while (exclude.includes(card));
+    return card;
+  }
+
+  function getRandomHand(exclude=[]) {
+    const c1 = getRandomCard(exclude);
+    const c2 = getRandomCard([...exclude, c1]);
+    return [c1, c2];
+  }
+
+  function getRandomScenario(idx) {
+    const numPlayers = Math.floor(Math.random()*4)+2; // 2-5 players
+    const hero = getRandomHand();
+    const players = Array(numPlayers-1).fill({});
+    const potSize = numPlayers;
+    const toCall = Math.floor(Math.random()*3)+1;
+    const raiseSize = toCall + Math.floor(Math.random()*4)+1;
+    return {
+      name: `Preflop #${idx+1}: ${hero.join(' ')} vs ${numPlayers-1} players`,
+      hero,
+      board: [],
+      players,
+      potSize,
+      toCall,
+      raiseSize
+    };
+  }
+
+  const scenarios = Array.from({length: 7}, (_,i) => getRandomScenario(i));
 
   for (const s of scenarios) {
     console.log('Running scenario in headless browser:', s.name);

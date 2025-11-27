@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PokerEye Visual Test Results</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; }
+    #chart { max-width: 800px; margin: auto; }
+  </style>
+</head>
+<body>
+  <h1>PokerEye Test Scenarios - Equity Visualization</h1>
+  <canvas id="chart" width="800" height="400"></canvas>
+  <script>
+    fetch('/results')
+      .then(res => res.json())
+      .then(data => {
+        const labels = data.map(s => s.name);
+        const equities = data.map(s => s.equity || 0);
+        const ctx = document.getElementById('chart').getContext('2d');
+        new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Equity (%)',
+              data: equities,
+              backgroundColor: 'rgba(54, 162, 235, 0.6)'
+            }]
+          },
+          options: {
+            scales: {
+              y: { beginAtZero: true, max: 100 }
+            }
+          }
+        });
+      });
+  </script>
+</body>
+</html>
