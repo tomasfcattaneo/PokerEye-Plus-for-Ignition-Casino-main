@@ -2408,22 +2408,12 @@ class HUD {
 
   // Small helper to show analysis status in the HUD menu
   updateAnalysisStatus(isActive) {
-    try {
-      if (!this.pokerEyeMenu) return;
-      let statusEl = this.pokerEyeMenu.querySelector('#PokerEyePlus-analysisStatus');
-      if (!statusEl) {
-        statusEl = this.doc.createElement('div');
-        statusEl.id = 'PokerEyePlus-analysisStatus';
-        statusEl.style.fontSize = '12px';
-        statusEl.style.marginTop = '6px';
-        const container = this.pokerEyeMenu.querySelector('#PokerEyePlus-evContainer') || this.pokerEyeMenu;
-        container.appendChild(statusEl);
-      }
-      statusEl.innerText = isActive ? 'Analysis: ACTIVE' : 'Analysis: idle';
-      statusEl.style.color = isActive ? '#22c55e' : '#9CA3AF';
-    } catch (e) {
-      // swallow
-    }
+    // Intentionally left blank to conserve HUD space.
+    // We previously showed a small 'Analysis: ACTIVE/idle' indicator here,
+    // but it occupied valuable space. Keeping this method as a no-op
+    // prevents creation/updating of that DOM node while preserving the
+    // API surface for any callers.
+    return;
   }
 
   close() {
@@ -2957,11 +2947,6 @@ class HUD {
           </div>
         </div>
 
-        <!-- Engine status -->
-        <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: rgba(255,255,255,0.02); border-radius: 6px;">
-          <span style="font-weight: 500;">Engine</span>
-          <span id="PokerEyePlus-engineStatus" style="font-weight: bold; color: #60a5fa;">${PokerSolverManager.isAvailable() ? 'Engine: PokerSolver · GTO: ON · Odds: MonteCarlo' : 'Engine: MonteCarlo · GTO: ON'}</span>
-        </div>
         </div>
 
         <!-- (Old separate Outs / Relative sections removed - now merged into Hand Summary above) -->
