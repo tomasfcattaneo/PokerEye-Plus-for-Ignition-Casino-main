@@ -192,6 +192,23 @@
     const sumP = distribution.reduce((s,d)=>s+d.prob,0);
     for (const d of distribution) d.prob = d.prob / sumP;
 
+    // If there's nothing to call (toCall === 0), a 'fold' is semantically a 'check'.
+    // Convert evaluator's 'fold' action into 'check' so clients receive the correct UX-level option.
+    try {
+      if (!toCall || Number(toCall) === 0) {
+        for (const d of distribution) {
+          if (d.action === 'fold') {
+            d.action = 'check';
+            // A reasonable EV for checking when no bet is to use the 'call' EV (which assumes zero toCall)
+            d.ev = typeof evCall === 'number' ? evCall : d.ev;
+            // Ensure probability mass preserved; leave d.prob as-is
+          }
+        }
+      }
+    } catch (e) {
+      // swallow
+    }
+
     return { actions: distribution, meta: { method: showdownEst.method || eqRes.method || 'equity', equity, numOpponents, allFoldProb, effectiveOpp } };
   }
 

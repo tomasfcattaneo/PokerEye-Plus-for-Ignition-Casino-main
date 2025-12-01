@@ -57,6 +57,10 @@ const SHOW_BB_BY_DEFAULT = false;
 // ============ EQUITY CALCULATION SETTINGS ============
 const USE_MONTE_CARLO_POSTFLOP = true;  // Set to true for accurate equity, false for fast approximation
 
+// Cache / debug / debounce tunables
+const DEBUG_CACHE = false; // Set to true to print cache keys on HIT/MISS (verbose)
+const HUD_UPDATE_DEBOUNCE_MS = 300; // ms debounce for HUD auto-updates to avoid repeated Monte Carlo
+
 // Adaptive Monte Carlo iterations based on number of opponents
 // More opponents = need more iterations for convergence
 const MONTE_CARLO_ITERATIONS_HEADSUP = 15000;   // 1v1: faster, ~±1% variance, ~1s
@@ -79,6 +83,121 @@ const MULTIWAY_MODE_FACTOR = {
   'normal': 1.0,
   'aggressive': 1.15
 };
+
+// Expose a quick helper on window for manual smoke tests (placed after EquityCalculator definition)
+(function(){
+  try {
+    window.PokerEyeCacheTest = {
+      run: async function(opts) {
+        if (!window.EquityCalculator || typeof window.EquityCalculator.runCacheSmokeTest !== 'function') {
+          throw new Error('EquityCalculator.runCacheSmokeTest not available');
+        }
+        return await window.EquityCalculator.runCacheSmokeTest(opts);
+      },
+      stats: function() { return window.EquityCalculator ? window.EquityCalculator.getCacheStats() : null; }
+    };
+  } catch (e) {}
+})();
+
+// --- Page bridge: expose minimal, Promise-based proxies on the page window
+// This helps DevTools page console checks (page context) see the same APIs
+// and allows page scripts to call into the content-script implementations.
+(function(){
+  try {
+    // Content-script side: listen for requests from page
+    window.addEventListener('message', async function(event) {
+      try {
+        const msg = event.data || {};
+        if (!msg || msg.source !== 'PokerEyePageBridge') return;
+
+        const id = msg.id;
+        const method = msg.method;
+        const params = msg.params || [];
+
+        // Allowed method map: map page-visible names to content-script functions
+        const methods = {
+          'PokerEyeEvaluator.getRecommendation': async (args) => await getUnifiedRecommendationFromEvaluator(args[0] || {}),
+          'PokerEyeOdds.calculate': async (args) => {
+            if (!window.PokerEyeOdds || typeof window.PokerEyeOdds.calculate !== 'function') throw new Error('PokerEyeOdds not available');
+            return await window.PokerEyeOdds.calculate(...args);
+          },
+          'EquityCalculator.getMonteCarloEquity': async (args) => {
+            if (!window.EquityCalculator || typeof window.EquityCalculator.getMonteCarloEquity !== 'function') throw new Error('EquityCalculator not available');
+            return await window.EquityCalculator.getMonteCarloEquity(...args);
+          },
+          'EquityCalculator.getSmartEquity': async (args) => {
+            if (!window.EquityCalculator || typeof window.EquityCalculator.getSmartEquity !== 'function') throw new Error('EquityCalculator not available');
+            return await window.EquityCalculator.getSmartEquity(...args);
+          },
+          'EquityCalculator.getCacheStats': async () => ({ stats: window.EquityCalculator ? window.EquityCalculator.getCacheStats() : null })
+        };
+
+        const key = `${msg.api}.${msg.fn}` || method;
+
+        // direct method support if method provided as full key
+        const fn = methods[method] || methods[key];
+        if (!fn) throw new Error('Unknown bridge method: ' + method);
+
+        const result = await fn(params);
+
+        // Post back result
+        window.postMessage({ source: 'PokerEyePageBridgeResponse', id, ok: true, result }, '*');
+      } catch (err) {
+        window.postMessage({ source: 'PokerEyePageBridgeResponse', id: (event.data && event.data.id) || null, ok: false, error: String(err && err.message ? err.message : err) }, '*');
+      }
+    }, false);
+
+    // Inject small script into page context to create page-visible proxies
+    const pageScript = document.createElement('script');
+    pageScript.type = 'text/javascript';
+    pageScript.textContent = `
+      (function(){
+        function callBridge(method, params) {
+          return new Promise((resolve, reject) => {
+            const id = 'peb-' + Math.random().toString(36).slice(2);
+            function onResp(e) {
+              const m = e.data || {};
+              if (!m || m.source !== 'PokerEyePageBridgeResponse' || m.id !== id) return;
+              window.removeEventListener('message', onResp);
+              if (m.ok) resolve(m.result); else reject(new Error(m.error || 'bridge error'));
+            }
+            window.addEventListener('message', onResp);
+            window.postMessage({ source: 'PokerEyePageBridge', id: id, method: method, params: params }, '*');
+          });
+        }
+
+        // Create lightweight proxies
+        try {
+          window.PokerEyeEvaluator = window.PokerEyeEvaluator || {};
+          window.PokerEyeEvaluator.getRecommendation = function(opts) { return callBridge('PokerEyeEvaluator.getRecommendation', [opts]); };
+
+          window.PokerEyeOdds = window.PokerEyeOdds || {};
+          window.PokerEyeOdds.calculate = function(cardGroups, board, variant, iterations, onProgress) {
+            // Note: onProgress is not implemented through the bridge; callers should use promise result
+            return callBridge('PokerEyeOdds.calculate', [cardGroups, board, variant, iterations]);
+          };
+
+          window.EquityCalculator = window.EquityCalculator || {};
+          window.EquityCalculator.getMonteCarloEquity = function(heroHand, board, numOpponents, deadCards, iterations, villains, context) {
+            return callBridge('EquityCalculator.getMonteCarloEquity', [heroHand, board, numOpponents, deadCards, iterations, villains, context]);
+          };
+          window.EquityCalculator.getSmartEquity = function(heroHand, board, numOpponents, deadCards, villains, context) {
+            return callBridge('EquityCalculator.getSmartEquity', [heroHand, board, numOpponents, deadCards, villains, context]);
+          };
+
+          window.PokerEyeBridgeReady = true;
+        } catch (e) {
+          // ignore
+        }
+      })();
+    `;
+    (document.head || document.documentElement).appendChild(pageScript);
+    pageScript.parentNode && pageScript.parentNode.removeChild(pageScript);
+  } catch (e) {
+    // swallow bridge failures
+    console.warn('[PokerEyeBridge] failed to install bridge', e);
+  }
+})();
 
 // Board texture modifiers to adjust per-villain respond probability
 const BOARD_RESPOND_FACTOR = {
@@ -347,6 +466,31 @@ async function getUnifiedRecommendationFromEvaluator({ heroHand, board, players,
       });
     }
 
+    // Post-process: if there's no toCall (we can check) then 'Fold' should be interpreted as 'Check'
+    // (e.g., Big Blind facing no bet should be offered Check, not Fold)
+    try {
+      if (!toCall || Number(toCall) === 0) {
+        // promote Check ev to Call's EV when present
+        if (evs.Call !== undefined) {
+          evs.Check = evs.Call;
+        }
+        // Remove Fold EV key to avoid confusing HUD consumers
+        if (evs.Fold !== undefined) {
+          delete evs.Fold;
+        }
+
+        // Update bestActions entries: Fold -> Check
+        for (const ba of bestActions) {
+          if (ba.action === 'Fold') {
+            ba.action = 'Check';
+            ba.amountToBet = 0;
+          }
+        }
+      }
+    } catch (e) {
+      // swallow
+    }
+
     // Ensure EV map contains at least Fold/Call/Raise keys
     evs.Fold = evs.Fold || 0;
     evs.Call = evs.Call || 0;
@@ -466,32 +610,90 @@ const EquityCalculator = {
   /**
    * Create cache key from hand situation
    */
-  _createCacheKey(heroHand, board, numOpponents, iterations) {
-    const handStr = [...heroHand].sort().join('');
-    const boardStr = [...board].sort().join('');
-    return `${handStr}_${boardStr}_${numOpponents}_${iterations}`;
+  _normalizeCard(card) {
+    if (!card) return '';
+    // Normalize different suit glyphs and ranks to canonical form like 'Ah','Td', etc.
+    try {
+      let s = String(card).trim();
+      // Replace common unicode suits with ascii
+      s = s.replace(/[♥♥]/g, 'h').replace(/[♦]/g, 'd').replace(/[♣]/g, 'c').replace(/[♠]/g, 's');
+      s = s.replace(/H/g, 'h').replace(/D/g, 'd').replace(/C/g, 'c').replace(/S/g, 's');
+      // Normalize 10 -> T
+      s = s.replace(/^10/, 'T');
+      // Ensure rank is uppercase
+      s = s.charAt(0).toUpperCase() + s.slice(1);
+      return s;
+    } catch (e) { return String(card); }
   },
-  
+
+  _fingerprintVillains(villains = [], context = {}) {
+    try {
+      if (!Array.isArray(villains) || villains.length === 0) return '';
+      const arr = villains.map(v => {
+        try {
+          // Prefer explicit rangeNotation if present
+          if (v && v.rangeNotation) return `${v.position||v.name||v.seat||'v'}:${String(v.rangeNotation)}`;
+          // Fallback to deriving a range via PositionStrategy (cheap stringified form)
+          const rn = PositionStrategy.getVillainRange(v, context) || [];
+          return `${v.position||v.name||v.seat||'v'}:${rn.join(',')}`;
+        } catch (e) { return `${v.position||v.name||v.seat||'v'}:unknown`; }
+      }).sort();
+      return arr.join('|');
+    } catch (e) { return ''; }
+  },
+
+  _simpleHash(str) {
+    // djb2-like simple hash -> hex string (keeps keys shorter)
+    let h = 5381;
+    for (let i = 0; i < str.length; i++) {
+      h = ((h << 5) + h) + str.charCodeAt(i);
+      h = h & 0xffffffff;
+    }
+    return (h >>> 0).toString(16);
+  },
+
+  _createCacheKey(heroHand, board, numOpponents, iterations, villains = [], context = {}) {
+    // Normalize hands/board to canonical strings
+    const h = Array.isArray(heroHand) ? heroHand.map(c=>this._normalizeCard(c)).sort().join('') : String(heroHand || '');
+    const b = Array.isArray(board) ? board.map(c=>this._normalizeCard(c)).sort().join('') : String(board || '');
+
+    // Bucket opponents to reduce churn (1,2,3+)
+    const oppBucket = Number(numOpponents) <= 1 ? 1 : Number(numOpponents) === 2 ? 2 : 3;
+
+    // Bucket iterations to nearest 1000 (so small differences don't bust cache)
+    const iterBucket = Math.max(1000, Math.round((Number(iterations)||0)/1000)*1000);
+
+    // Create a lightweight fingerprint of villain ranges (if provided)
+    const vfp = this._fingerprintVillains(villains, context);
+    const vhash = vfp ? this._simpleHash(vfp) : '';
+
+    const raw = `${h}_${b}_o${oppBucket}_i${iterBucket}_v${vhash}`;
+    // Shorten key via hash to prevent huge map keys while keeping uniqueness
+    return this._simpleHash(raw) + '::' + raw.slice(0, 120);
+  },
+
   /**
    * Get cached equity result
    */
   _getCachedEquity(cacheKey) {
-    if (!this.equityCache.has(cacheKey)) {
-      return null;
-    }
-    
+    if (!this.equityCache.has(cacheKey)) return null;
+
     const cached = this.equityCache.get(cacheKey);
-    
-    // Check if expired
-    if (Date.now() - cached.timestamp > this.CACHE_EXPIRY_MS) {
+
+    // Check expiry
+    if (Date.now() - (cached.lastAccess || cached.timestamp || 0) > this.CACHE_EXPIRY_MS) {
       this.equityCache.delete(cacheKey);
+      if (DEBUG_CACHE) console.log('[Cache EXPIRE] key=', cacheKey);
       return null;
     }
-    
-    // Update stats
-    cached.hits++;
+
+    // Update LRU metadata
+    cached.hits = (cached.hits || 0) + 1;
+    cached.lastAccess = Date.now();
     this.cacheStats.hits++;
-    
+
+    if (DEBUG_CACHE) console.log('[Cache HIT] key=', cacheKey, 'hits=', cached.hits);
+
     return cached;
   },
   
@@ -499,32 +701,32 @@ const EquityCalculator = {
    * Save equity result to cache
    */
   _saveCachedEquity(cacheKey, result) {
-    // Evict oldest if cache is full
+    // Evict least-recently-used if cache is full
     if (this.equityCache.size >= this.MAX_CACHE_SIZE) {
-      let oldestKey = null;
-      let oldestTime = Infinity;
-      
+      let lruKey = null;
+      let lruAccess = Infinity;
       for (const [key, value] of this.equityCache.entries()) {
-        if (value.timestamp < oldestTime) {
-          oldestTime = value.timestamp;
-          oldestKey = key;
+        const la = value.lastAccess || value.timestamp || 0;
+        if (la < lruAccess) {
+          lruAccess = la;
+          lruKey = key;
         }
       }
-      
-      if (oldestKey) {
-        this.equityCache.delete(oldestKey);
-      }
+      if (lruKey) this.equityCache.delete(lruKey);
+      if (DEBUG_CACHE) console.log('[Cache EVICT] evicted key=', lruKey);
     }
-    
-    // Save to cache
+
+    // Save entry with lastAccess metadata
     this.equityCache.set(cacheKey, {
       equity: result.equity,
       winPct: result.winPct,
       tiePct: result.tiePct,
       lossPct: result.lossPct,
       timestamp: Date.now(),
+      lastAccess: Date.now(),
       hits: 0
     });
+    if (DEBUG_CACHE) console.log('[Cache SAVE] key=', cacheKey);
   },
   
   /**
@@ -540,6 +742,33 @@ const EquityCalculator = {
       hitRate: `${hitRate}%`,
       timeSaved: `${(this.cacheStats.totalSaved / 1000).toFixed(1)}s`
     };
+  },
+
+  /**
+   * Small smoke test helper to exercise cache behavior.
+   * Usage: EquityCalculator.runCacheSmokeTest({ heroHand:['Ah','Kh'], board:[], numOpponents:1, iterations:2000, repeats:3 })
+   */
+  async runCacheSmokeTest({ heroHand, board = [], numOpponents = 1, iterations = 2000, repeats = 3 } = {}) {
+    try {
+      console.log('[CacheTest] Starting smoke test: repeats=', repeats, 'iterations=', iterations);
+      // Clear cache to start from clean slate
+      this.clearCache();
+      const results = [];
+      for (let i = 0; i < repeats; i++) {
+        const t0 = Date.now();
+        const res = await this.getMonteCarloEquity(heroHand, board, numOpponents, [], iterations);
+        const t1 = Date.now();
+        const took = t1 - t0;
+        const cached = !!(res && res.cached);
+        results.push({ run: i + 1, timeMs: took, cached, equity: res && res.equity });
+        console.log(`[CacheTest] run #${i+1}: time=${took}ms cached=${cached} equity=${res && res.equity}`);
+      }
+      console.log('[CacheTest] Final cache stats:', this.getCacheStats());
+      return results;
+    } catch (e) {
+      console.warn('[CacheTest] failed', e);
+      throw e;
+    }
   },
   
   /**
@@ -3921,8 +4150,8 @@ class Player {
       ? roundFloat(this.balance / this.pokerTable.blinds.big, 2, false)
       : null;
 
-  // Update HUD with current equity/hand without calculating actions
-  updateHUDEquity = async () => {
+  // Internal: heavy work to update HUD with current equity/hand without calculating actions (debounced wrapper calls this)
+  _doUpdateHUDEquity = async function() {
     // Only update if we have a hand and HUD is enabled
     if (this.hand.length !== 2 || !this.pokerTable?.hud) return;
     
@@ -4293,6 +4522,20 @@ class Player {
       }
     } catch (error) {
       console.error('[HUD Auto-Update] Error:', error);
+    }
+  };
+
+  // Public debounced caller - schedules the heavy update to avoid repeated Monte Carlo calls
+  updateHUDEquity = () => {
+    try {
+      if (this._hudUpdateTimer) clearTimeout(this._hudUpdateTimer);
+      this._hudUpdateTimer = setTimeout(() => {
+        this._hudUpdateTimer = null;
+        try { this._doUpdateHUDEquity(); } catch (e) { console.warn('[HUD Debounce] _doUpdateHUDEquity failed', e); }
+      }, HUD_UPDATE_DEBOUNCE_MS);
+    } catch (e) {
+      // fallback: call directly
+      try { this._doUpdateHUDEquity(); } catch (err) { console.warn('[HUD] updateHUDEquity fallback failed', err); }
     }
   };
 
